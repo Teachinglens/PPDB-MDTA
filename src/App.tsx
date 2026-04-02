@@ -3,7 +3,7 @@ import { differenceInYears, parseISO } from 'date-fns';
 import { useParams } from 'react-router-dom';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { onAuthStateChanged, auth, db, doc, getDoc, setDoc, signOut, signInWithPopup, googleProvider, serverTimestamp, query, collection, onSnapshot, updateDoc, getDocs } from './firebase';
+import { onAuthStateChanged, auth, db, doc, getDoc, setDoc, signOut, signInWithPopup, googleProvider, serverTimestamp, query, collection, onSnapshot, updateDoc, getDocs, deleteDoc } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -23,7 +23,8 @@ import {
   FileText,
   Download,
   Copy,
-  Share2
+  Share2,
+  Trash2
 } from 'lucide-react';
 
 // --- Types ---
@@ -178,13 +179,13 @@ const Navbar = () => {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={login}
+              <Link
+                to="/login"
                 className="ml-4 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center gap-2"
               >
                 <LogIn className="w-4 h-4" />
                 Login Admin
-              </button>
+              </Link>
             )}
           </div>
 
@@ -226,13 +227,14 @@ const Navbar = () => {
                 </Link>
               ))}
               {!user && (
-                <button
-                  onClick={() => { login(); setIsOpen(false); }}
-                  className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-emerald-600 hover:bg-emerald-50 flex items-center gap-3"
+                <Link
+                  to="/login"
+                  onClick={() => setIsOpen(false)}
+                  className="block px-3 py-2 rounded-md text-base font-medium text-emerald-600 hover:bg-emerald-50 flex items-center gap-3"
                 >
                   <LogIn className="w-5 h-5" />
                   Login Admin
-                </button>
+                </Link>
               )}
               {user && (
                 <button
@@ -405,6 +407,7 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/progress" element={<ProgressPage />} />
+              <Route path="/login" element={<LoginPage />} />
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
               <Route path="/success/:regId" element={<SuccessPage />} />
               <Route path="*" element={<div className="flex flex-col items-center justify-center h-screen text-center p-4">
@@ -424,15 +427,108 @@ export default function App() {
 
 // --- Helper Components & Pages ---
 
-const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAdmin, loading } = useAuth();
+const LoginPage = () => {
+  const { user, isAdmin, login, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && user && isAdmin) {
+      navigate('/admin');
+    }
+  }, [user, isAdmin, loading, navigate]);
+
   if (loading) return <div className="flex items-center justify-center h-screen"><Clock className="animate-spin text-emerald-600" /></div>;
-  if (!isAdmin) return <div className="flex flex-col items-center justify-center h-screen text-center p-4">
-    <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
-    <h2 className="text-2xl font-bold text-gray-900">Akses Ditolak</h2>
-    <p className="text-gray-600 mt-2">Halaman ini hanya untuk panitia.</p>
-    <Link to="/" className="mt-6 text-emerald-600 font-medium hover:underline">Kembali ke Beranda</Link>
-  </div>;
+
+  return (
+    <div className="max-w-md mx-auto px-4 py-20">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 text-center"
+      >
+        <div className="bg-emerald-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <LogIn className="w-8 h-8 text-emerald-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Login Panitia</h2>
+        <p className="text-gray-600 mb-8">Silakan masuk menggunakan akun Google yang terdaftar sebagai panitia.</p>
+        
+        {user ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
+              <p className="font-bold">Akses Terbatas</p>
+              <p>Akun <strong>{user.email}</strong> tidak memiliki akses admin.</p>
+            </div>
+            <button
+              onClick={() => auth.signOut().then(() => login())}
+              className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+            >
+              Ganti Akun
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={login}
+            className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+          >
+            <LogIn className="w-5 h-5" />
+            Login dengan Google
+          </button>
+        )}
+        
+        <Link to="/" className="block mt-6 text-sm text-gray-500 hover:underline">
+          Kembali ke Beranda
+        </Link>
+      </motion.div>
+    </div>
+  );
+};
+
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isAdmin, loading, login } = useAuth();
+  
+  if (loading) return <div className="flex items-center justify-center h-screen"><Clock className="animate-spin text-emerald-600" /></div>;
+  
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen text-center p-4">
+        <LogIn className="w-16 h-16 text-emerald-600 mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900">Login Diperlukan</h2>
+        <p className="text-gray-600 mt-2">Silakan login dengan akun panitia untuk mengakses halaman ini.</p>
+        <Link
+          to="/login"
+          className="mt-6 px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 flex items-center gap-2"
+        >
+          <LogIn className="w-5 h-5" />
+          Ke Halaman Login
+        </Link>
+        <Link to="/" className="mt-4 text-gray-500 hover:underline text-sm">Kembali ke Beranda</Link>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen text-center p-4">
+        <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900">Akses Ditolak</h2>
+        <p className="text-gray-600 mt-2">Akun Anda ({user.email}) tidak memiliki hak akses sebagai panitia.</p>
+        <p className="text-sm text-gray-500 mt-1 italic">Pastikan Anda menggunakan email yang terdaftar sebagai admin.</p>
+        <div className="flex gap-4 mt-6">
+          <Link to="/" className="px-6 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 transition-colors">Beranda</Link>
+          <button
+            onClick={() => {
+              // Sign out first to allow switching accounts
+              auth.signOut().then(() => login());
+            }}
+            className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
+          >
+            Ganti Akun
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return <>{children}</>;
 };
 
@@ -954,6 +1050,7 @@ const AdminDashboard = () => {
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'students'));
@@ -971,6 +1068,16 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error(err);
       alert("Gagal memperbarui status.");
+    }
+  };
+
+  const deleteStudent = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'students', id));
+      setDeletingId(null);
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghapus data.");
     }
   };
 
@@ -1177,10 +1284,17 @@ const AdminDashboard = () => {
                         </button>
                         <button
                           onClick={() => updateStatus(s.id, 'rejected')}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                           title="Tolak"
                         >
                           <X className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingId(s.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Hapus"
+                        >
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     </td>
@@ -1191,6 +1305,42 @@ const AdminDashboard = () => {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deletingId && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl border border-gray-100"
+            >
+              <div className="bg-red-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Hapus Data?</h3>
+              <p className="text-gray-600 text-center mb-8">
+                Tindakan ini tidak dapat dibatalkan. Seluruh data pendaftaran siswa ini akan dihapus permanen.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeletingId(null)}
+                  className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => deleteStudent(deletingId)}
+                  className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-100"
+                >
+                  Ya, Hapus
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
