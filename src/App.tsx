@@ -1,3 +1,4 @@
+import { jsPDF } from 'jspdf';
 import { differenceInYears, parseISO } from 'date-fns';
 import { useParams } from 'react-router-dom';
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -19,7 +20,10 @@ import {
   ChevronRight,
   Home as HomeIcon,
   Users,
-  FileText
+  FileText,
+  Download,
+  Copy,
+  Share2
 } from 'lucide-react';
 
 // --- Types ---
@@ -64,7 +68,8 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           setProfile(docSnap.data() as UserProfile);
         } else {
           // Default role for new users (except the bootstrapped admin)
-          const isAdminEmail = currentUser.email === "mahardikasandy1992@gmail.com";
+          const adminEmails = ["mahardikasandy1992@gmail.com", "barlimahardikasandy@gmail.com"];
+          const isAdminEmail = adminEmails.includes(currentUser.email || '');
           const newProfile: UserProfile = {
             uid: currentUser.uid,
             email: currentUser.email || '',
@@ -97,7 +102,12 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
   };
 
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = profile?.role === 'admin' && (
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.includes('asia-southeast1.run.app') ||
+    profile.email === 'barlimahardikasandy@gmail.com'
+  );
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, isAdmin, login, logout }}>
@@ -436,6 +446,7 @@ const studentSchema = z.object({
   birthPlace: z.string().min(2, 'Tempat lahir minimal 2 karakter'),
   birthDate: z.string().min(1, 'Tanggal lahir harus diisi'),
   gender: z.enum(['Laki-laki', 'Perempuan']),
+  sdClass: z.string().min(1, 'Kelas di SD harus dipilih'),
   parentName: z.string().min(3, 'Nama orang tua minimal 3 karakter'),
   phoneNumber: z.string().min(10, 'Nomor telepon minimal 10 digit'),
   address: z.string().min(5, 'Alamat minimal 5 karakter'),
@@ -529,6 +540,24 @@ const RegisterPage = () => {
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Kelas di SD</label>
+              <select
+                {...register('sdClass')}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none bg-white"
+              >
+                <option value="">Pilih Kelas</option>
+                <option value="Belum Sekolah">Belum Sekolah</option>
+                <option value="Kelas 1">Kelas 1</option>
+                <option value="Kelas 2">Kelas 2</option>
+                <option value="Kelas 3">Kelas 3</option>
+                <option value="Kelas 4">Kelas 4</option>
+                <option value="Kelas 5">Kelas 5</option>
+                <option value="Kelas 6">Kelas 6</option>
+              </select>
+              {errors.sdClass && <p className="text-xs text-red-500">{errors.sdClass.message}</p>}
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-semibold text-gray-700">Nama Orang Tua / Wali</label>
               <input
                 {...register('parentName')}
@@ -576,38 +605,92 @@ const RegisterPage = () => {
 
 const SuccessPage = () => {
   const { regId } = useParams<{ regId: string }>();
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = () => {
+    if (!regId) return;
+    navigator.clipboard.writeText(regId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareToWhatsApp = () => {
+    const message = `Halo, saya baru saja mendaftar di MDTA ABU DZAR. Nomor Registrasi saya adalah: *${regId}*. Saya menyimpannya untuk mengecek progres pendaftaran nanti.`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+    <div className="max-w-2xl mx-auto px-4 py-12 text-center">
       <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
+        initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white p-12 rounded-3xl shadow-xl border border-gray-100"
+        className="bg-white p-8 sm:p-12 rounded-[2.5rem] shadow-2xl shadow-emerald-100 border border-emerald-50 relative overflow-hidden"
       >
-        <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-8">
-          <CheckCircle className="w-10 h-10" />
+        {/* Decorative background element */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-16 -mt-16 opacity-50" />
+        
+        <div className="w-24 h-24 bg-emerald-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3 shadow-lg shadow-emerald-200">
+          <CheckCircle className="w-12 h-12" />
         </div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-4">Pendaftaran Berhasil!</h2>
-        <p className="text-gray-600 mb-8">
-          Data pendaftaran telah kami terima. Silakan simpan nomor registrasi Anda untuk mengecek progres pendaftaran.
-        </p>
-        <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 mb-8">
-          <p className="text-sm text-emerald-600 font-medium uppercase tracking-wider mb-1">Nomor Registrasi</p>
-          <p className="text-4xl font-black text-emerald-700">{regId}</p>
+
+        <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-4">Alhamdulillah, <br/><span className="text-emerald-600">Pendaftaran Berhasil!</span></h2>
+        
+        <div className="max-w-md mx-auto mb-10">
+          <p className="text-gray-600 leading-relaxed">
+            Data pendaftaran Anda telah masuk ke sistem kami. <span className="font-bold text-gray-900">PENTING:</span> Mohon simpan atau screenshot nomor registrasi di bawah ini agar tidak hilang.
+          </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+
+        <div className="relative group mb-10">
+          <div className="absolute inset-0 bg-emerald-600 blur-2xl opacity-10 group-hover:opacity-20 transition-opacity" />
+          <div className="relative bg-white p-8 rounded-3xl border-2 border-dashed border-emerald-200 flex flex-col items-center justify-center">
+            <p className="text-xs font-bold text-emerald-600 uppercase tracking-[0.2em] mb-3">Nomor Registrasi Anda</p>
+            <p className="text-5xl sm:text-6xl font-black text-gray-900 tracking-tighter mb-6 font-mono">{regId}</p>
+            
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                onClick={copyToClipboard}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+                  copied 
+                    ? 'bg-emerald-600 text-white scale-95' 
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                }`}
+              >
+                {copied ? <CheckCircle className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                {copied ? 'Tersalin!' : 'Salin Nomor'}
+              </button>
+              
+              <button
+                onClick={shareToWhatsApp}
+                className="flex items-center gap-2 px-6 py-3 bg-green-50 text-green-700 rounded-xl font-bold hover:bg-green-100 transition-all"
+              >
+                <Share2 className="w-5 h-5" />
+                Simpan ke WA
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4">
           <Link
             to="/progress"
-            className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-all"
+            className="flex items-center justify-center gap-2 px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
           >
-            Cek Progres Sekarang
+            <Search className="w-5 h-5" />
+            Cek Progres
           </Link>
           <Link
             to="/"
-            className="px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-all"
+            className="flex items-center justify-center gap-2 px-8 py-4 bg-gray-50 text-gray-600 rounded-2xl font-bold hover:bg-gray-100 transition-all"
           >
-            Kembali ke Beranda
+            <HomeIcon className="w-5 h-5" />
+            Ke Beranda
           </Link>
         </div>
+
+        <p className="mt-10 text-xs text-gray-400 italic">
+          *Gunakan nomor ini untuk mengecek status penerimaan di halaman "Cek Progres".
+        </p>
       </motion.div>
     </div>
   );
@@ -733,8 +816,118 @@ const ProgressPage = () => {
                       <li>Fotokopi Akte Kelahiran</li>
                       <li>Fotokopi Kartu Keluarga</li>
                       <li>Pas foto 3x4 2 lembar dengan background merah</li>
+                      <li>Surat Keterangan yang ditandatangani orang tua (Download di bawah)</li>
                     </ul>
+                    <div className="pt-4">
+                      <button
+                        onClick={() => {
+                          const doc = new jsPDF();
+                          
+                          // Header (Matching the provided image)
+                          doc.setFont('helvetica', 'bold');
+                          doc.setFontSize(14);
+                          doc.text('YAYASAN ABU DZAR AL-GHIFFARY', 115, 20, { align: 'center' });
+                          
+                          doc.setFontSize(12);
+                          doc.text('MADRASAH DINIYAH TAKMILIYAH AWALIYAH', 115, 27, { align: 'center' });
+                          
+                          doc.setFontSize(22);
+                          doc.text('ABU DZAR', 115, 38, { align: 'center' });
+                          
+                          doc.setFont('helvetica', 'normal');
+                          doc.setFontSize(10);
+                          doc.text('Alamat: Jl. Raya Serang Km. 3 Komp. Cigadung Mandiri RT 01/10.', 115, 45, { align: 'center' });
+                          doc.text('Email: mdta.abudzar@gmail.com', 115, 50, { align: 'center' });
+                          
+                          // Double Line Separator
+                          doc.setLineWidth(0.8);
+                          doc.line(20, 54, 190, 54);
+                          doc.setLineWidth(0.2);
+                          doc.line(20, 56, 190, 56);
+
+                          // Narrative
+                          doc.setFontSize(11);
+                          doc.setFont('helvetica', 'bold');
+                          doc.text('SURAT KETERANGAN DITERIMA', 105, 68, { align: 'center' });
+                          
+                          doc.setFont('helvetica', 'normal');
+                          const narrative = `Berdasarkan hasil verifikasi data pendaftaran, dengan ini Panitia Penerimaan Siswa Baru MDTA ABU DZAR menyatakan bahwa calon siswa di bawah ini:`;
+                          const splitNarrative = doc.splitTextToSize(narrative, 170);
+                          doc.text(splitNarrative, 20, 78);
+
+                          doc.setFont('helvetica', 'bold');
+                          doc.text('DITERIMA', 105, 88, { align: 'center' });
+                          doc.setFont('helvetica', 'normal');
+
+                          // Student Data
+                          let y = 100;
+                          const labels = [
+                            ['No. Registrasi', student.registrationNumber],
+                            ['Nama Lengkap', student.fullName],
+                            ['Jenis Kelamin', student.gender],
+                            ['Tempat, Tgl Lahir', `${student.birthPlace}, ${student.birthDate}`],
+                            ['Kelas di SD', student.sdClass],
+                            ['Nama Orang Tua', student.parentName],
+                            ['Nomor Telepon', student.phoneNumber],
+                            ['Alamat', student.address]
+                          ];
+
+                          labels.forEach(([label, value]) => {
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(`${label}`, 25, y);
+                            doc.text(':', 65, y);
+                            doc.setFont('helvetica', 'normal');
+                            const splitValue = doc.splitTextToSize(value, 115);
+                            doc.text(splitValue, 70, y);
+                            y += (splitValue.length * 6);
+                          });
+
+                          // Photo Box
+                          y += 10;
+                          doc.setLineWidth(0.2);
+                          doc.rect(25, y, 30, 40); // 3x4 ratio
+                          doc.setFontSize(8);
+                          doc.text('Foto 3x4', 40, y + 20, { align: 'center' });
+
+                          // Signature
+                          doc.setFontSize(11);
+                          const today = new Date().toLocaleDateString('id-ID', { 
+                            day: 'numeric', 
+                            month: 'long', 
+                            year: 'numeric' 
+                          });
+                          doc.text(`Dicetak pada: ${today}`, 130, y);
+                          doc.text('Tanda Tangan Orang Tua/Wali', 130, y + 10);
+                          doc.line(130, y + 40, 185, y + 40);
+                          doc.text(`( ${student.parentName} )`, 130, y + 45);
+
+                          // Footer Info
+                          doc.setFontSize(9);
+                          doc.setFont('helvetica', 'italic');
+                          const footer = '*Surat ini adalah bukti pendaftaran online yang sah. Silakan bawa surat ini saat melakukan daftar ulang ke kantor MDTA ABU DZAR.';
+                          doc.text(doc.splitTextToSize(footer, 170), 20, 280);
+
+                          doc.save(`Surat_Diterima_${student.registrationNumber}.pdf`);
+                        }}
+                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                      >
+                        <Download className="w-5 h-5" />
+                        Download Surat Keterangan (PDF)
+                      </button>
+                    </div>
                   </div>
+                </div>
+              )}
+
+              {student.status === 'pending' && (
+                <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100">
+                  <h4 className="font-bold text-amber-800 mb-2 flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    Sedang Diproses
+                  </h4>
+                  <p className="text-sm text-amber-700 leading-relaxed">
+                    Pendaftaran Anda telah berhasil diterima dan saat ini sedang dalam proses verifikasi. Mohon menunggu, kami akan segera memberikan informasi lanjutan.
+                  </p>
                 </div>
               )}
 
@@ -783,6 +976,55 @@ const AdminDashboard = () => {
 
   const filteredStudents = students.filter(s => filter === 'all' || s.status === filter);
 
+  const downloadData = () => {
+    if (students.length === 0) return;
+
+    const headers = [
+      'No. Registrasi',
+      'Nama Lengkap',
+      'Tempat Lahir',
+      'Tanggal Lahir',
+      'Jenis Kelamin',
+      'Kelas SD',
+      'Nama Orang Tua',
+      'Nomor Telepon',
+      'Alamat',
+      'Status',
+      'Tanggal Daftar'
+    ];
+
+    const csvRows = [
+      headers.join(','),
+      ...students.map(s => {
+        const createdAt = s.createdAt?.toDate ? s.createdAt.toDate().toLocaleString() : '';
+        return [
+          `"${s.registrationNumber}"`,
+          `"${s.fullName}"`,
+          `"${s.birthPlace}"`,
+          `"${s.birthDate}"`,
+          `"${s.gender}"`,
+          `"${s.sdClass || '-'}"`,
+          `"${s.parentName}"`,
+          `"${s.phoneNumber}"`,
+          `"${s.address.replace(/"/g, '""')}"`,
+          `"${s.status}"`,
+          `"${createdAt}"`
+        ].join(',');
+      })
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `data_siswa_psb_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const stats = {
     total: students.length,
     pending: students.filter(s => s.status === 'pending').length,
@@ -807,7 +1049,14 @@ const AdminDashboard = () => {
           <h2 className="text-3xl font-bold text-gray-900">Dashboard Panitia</h2>
           <p className="text-gray-500">Kelola pendaftaran siswa baru MDTA ABU DZAR.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={downloadData}
+            className="px-4 py-2 bg-white text-emerald-600 border border-emerald-200 rounded-lg text-sm font-medium hover:bg-emerald-50 transition-all flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            Download Data
+          </button>
           {['all', 'pending', 'accepted', 'rejected'].map((f) => (
             <button
               key={f}
@@ -868,6 +1117,7 @@ const AdminDashboard = () => {
                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">No. Reg</th>
                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Nama Siswa</th>
                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Gender</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Kelas SD</th>
                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Usia</th>
                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Orang Tua</th>
                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Telepon</th>
@@ -903,6 +1153,7 @@ const AdminDashboard = () => {
                         {s.gender}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-gray-600 font-medium">{s.sdClass || '-'}</td>
                     <td className="px-6 py-4 text-gray-600 font-medium">{calculateAge(s.birthDate)} Tahun</td>
                     <td className="px-6 py-4 text-gray-600">{s.parentName}</td>
                     <td className="px-6 py-4 text-gray-600">{s.phoneNumber}</td>
