@@ -2,7 +2,7 @@ import { differenceInYears, parseISO } from 'date-fns';
 import { useParams } from 'react-router-dom';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { onAuthStateChanged, auth, db, doc, getDoc, setDoc, signOut, signInWithPopup, googleProvider, serverTimestamp, query, collection, onSnapshot, updateDoc } from './firebase';
+import { onAuthStateChanged, auth, db, doc, getDoc, setDoc, signOut, signInWithPopup, googleProvider, serverTimestamp, query, collection, onSnapshot, updateDoc, getDocs } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -259,109 +259,128 @@ const Footer = () => (
 
 // --- Pages ---
 
-const Home = () => (
-  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-    <div className="grid lg:grid-cols-2 gap-12 items-center">
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 mb-6">
-          Pendaftaran Tahun Ajaran 2026/2027
-        </span>
-        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
-          Membangun Generasi <br />
-          <span className="text-emerald-600">Berakhlak & Qur'ani</span>
-        </h1>
-        <p className="text-lg text-gray-600 mb-8 max-w-lg">
-          Selamat datang di portal pendaftaran siswa baru MDTA ABU DZAR. Kami berkomitmen memberikan pendidikan agama terbaik untuk putra-putri Anda.
-        </p>
-        <div className="flex flex-wrap gap-4">
-          <Link
-            to="/register"
-            className="px-8 py-4 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 flex items-center gap-2"
-          >
-            Daftar Sekarang
-            <ChevronRight className="w-5 h-5" />
-          </Link>
-          <Link
-            to="/progress"
-            className="px-8 py-4 bg-white text-gray-700 border border-gray-200 rounded-xl font-semibold hover:bg-gray-50 transition-all flex items-center gap-2"
-          >
-            Cek Status
-            <Search className="w-5 h-5" />
-          </Link>
-        </div>
-      </motion.div>
+const Home = () => {
+  const [count, setCount] = useState<number | null>(null);
 
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        className="relative"
-      >
-        <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl">
-          <img
-            src="https://images.unsplash.com/photo-1577891772427-656f448c68b9?auto=format&fit=crop&q=80&w=1000"
-            alt="Islamic Education"
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-        <div className="absolute -bottom-6 -left-6 bg-white p-6 rounded-2xl shadow-xl border border-gray-50 hidden sm:block">
-          <div className="flex items-center gap-4">
-            <div className="bg-emerald-100 p-3 rounded-xl">
-              <Users className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">500+</p>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Siswa Terdaftar</p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    </div>
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'students'));
+        setCount(snapshot.size);
+      } catch (error) {
+        console.error("Error fetching student count:", error);
+      }
+    };
+    fetchCount();
+  }, []);
 
-    {/* Features */}
-    <div className="grid md:grid-cols-3 gap-8 mt-24">
-      {[
-        {
-          title: 'Kurikulum Terpadu',
-          desc: 'Kombinasi pendidikan agama dan pembentukan karakter yang kuat.',
-          icon: GraduationCap,
-          color: 'bg-blue-50 text-blue-600'
-        },
-        {
-          title: 'Pengajar Berpengalaman',
-          desc: 'Dibimbing oleh ustadz dan ustadzah yang kompeten di bidangnya.',
-          icon: Users,
-          color: 'bg-emerald-50 text-emerald-600'
-        },
-        {
-          title: 'Fasilitas Nyaman',
-          desc: 'Lingkungan belajar yang bersih, aman, dan kondusif.',
-          icon: CheckCircle,
-          color: 'bg-amber-50 text-amber-600'
-        }
-      ].map((feature, i) => (
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="grid lg:grid-cols-2 gap-12 items-center">
         <motion.div
-          key={i}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 + i * 0.1 }}
-          className="bg-white p-8 rounded-2xl border border-gray-100 hover:shadow-xl transition-shadow"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
         >
-          <div className={`${feature.color} w-12 h-12 rounded-xl flex items-center justify-center mb-6`}>
-            <feature.icon className="w-6 h-6" />
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 mb-6">
+            Pendaftaran Tahun Ajaran 2026/2027
+          </span>
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
+            Membangun Generasi <br />
+            <span className="text-emerald-600">Berakhlak & Qur'ani</span>
+          </h1>
+          <p className="text-lg text-gray-600 mb-8 max-w-lg">
+            Selamat datang di portal pendaftaran siswa baru MDTA ABU DZAR. Kami berkomitmen memberikan pendidikan agama terbaik untuk putra-putri Anda.
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <Link
+              to="/register"
+              className="px-8 py-4 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 flex items-center gap-2"
+            >
+              Daftar Sekarang
+              <ChevronRight className="w-5 h-5" />
+            </Link>
+            <Link
+              to="/progress"
+              className="px-8 py-4 bg-white text-gray-700 border border-gray-200 rounded-xl font-semibold hover:bg-gray-50 transition-all flex items-center gap-2"
+            >
+              Cek Status
+              <Search className="w-5 h-5" />
+            </Link>
           </div>
-          <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
-          <p className="text-gray-600 leading-relaxed">{feature.desc}</p>
         </motion.div>
-      ))}
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="relative"
+        >
+          <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl">
+            <img
+              src="https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?auto=format&fit=crop&q=80&w=1000"
+              alt="Beautiful Mosque"
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = "https://images.pexels.com/photos/2233416/pexels-photo-2233416.jpeg?auto=compress&cs=tinysrgb&w=1000";
+              }}
+            />
+          </div>
+          <div className="absolute -bottom-6 -left-6 bg-white p-6 rounded-2xl shadow-xl border border-gray-50 hidden sm:block">
+            <div className="flex items-center gap-4">
+              <div className="bg-emerald-100 p-3 rounded-xl">
+                <Users className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900">{count !== null ? count : '...'}</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wider">Siswa Terdaftar</p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Features */}
+      <div className="grid md:grid-cols-3 gap-8 mt-24">
+        {[
+          {
+            title: 'Kurikulum Terpadu',
+            desc: 'Kombinasi pendidikan agama dan pembentukan karakter yang kuat.',
+            icon: GraduationCap,
+            color: 'bg-blue-50 text-blue-600'
+          },
+          {
+            title: 'Pengajar Berpengalaman',
+            desc: 'Dibimbing oleh ustadz dan ustadzah yang kompeten di bidangnya.',
+            icon: Users,
+            color: 'bg-emerald-50 text-emerald-600'
+          },
+          {
+            title: 'Fasilitas Nyaman',
+            desc: 'Lingkungan belajar yang bersih, aman, dan kondusif.',
+            icon: CheckCircle,
+            color: 'bg-amber-50 text-amber-600'
+          }
+        ].map((feature, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 + i * 0.1 }}
+            className="bg-white p-8 rounded-2xl border border-gray-100 hover:shadow-xl transition-shadow"
+          >
+            <div className={`${feature.color} w-12 h-12 rounded-xl flex items-center justify-center mb-6`}>
+              <feature.icon className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
+            <p className="text-gray-600 leading-relaxed">{feature.desc}</p>
+          </motion.div>
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // --- Main App Component ---
 
@@ -378,6 +397,12 @@ export default function App() {
               <Route path="/progress" element={<ProgressPage />} />
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
               <Route path="/success/:regId" element={<SuccessPage />} />
+              <Route path="*" element={<div className="flex flex-col items-center justify-center h-screen text-center p-4">
+                <AlertCircle className="w-16 h-16 text-emerald-600 mb-4" />
+                <h2 className="text-2xl font-bold text-gray-900">Halaman Tidak Ditemukan</h2>
+                <p className="text-gray-600 mt-2">Maaf, halaman yang Anda cari tidak tersedia.</p>
+                <Link to="/" className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors">Kembali ke Beranda</Link>
+              </div>} />
             </Routes>
           </main>
           <Footer />
@@ -702,9 +727,14 @@ const ProgressPage = () => {
                     <CheckCircle className="w-5 h-5" />
                     Selamat! Anda Diterima
                   </h4>
-                  <p className="text-sm text-emerald-700 leading-relaxed">
-                    Silakan datang ke kantor MDTA ABU DZAR pada jam kerja untuk melakukan daftar ulang dengan membawa berkas-berkas yang diperlukan.
-                  </p>
+                  <div className="text-sm text-emerald-700 leading-relaxed space-y-2">
+                    <p>Silakan datang ke MDTA ABU DZAR pada jam kerja untuk melakukan daftar ulang dengan membawa berkas:</p>
+                    <ul className="list-decimal list-inside ml-2">
+                      <li>Fotokopi Akte Kelahiran</li>
+                      <li>Fotokopi Kartu Keluarga</li>
+                      <li>Pas foto 3x4 2 lembar dengan background merah</li>
+                    </ul>
+                  </div>
                 </div>
               )}
 
@@ -715,7 +745,7 @@ const ProgressPage = () => {
                     Mohon Maaf
                   </h4>
                   <p className="text-sm text-red-700 leading-relaxed">
-                    Pendaftaran Anda belum dapat kami terima untuk saat ini. Terima kasih atas minat Anda pada MDTA ABU DZAR.
+                    Pendaftaran Anda belum dapat kami terima untuk saat ini. Terima kasih atas minat Anda untuk mendaftarkan putra/putri-nya pada MDTA ABU DZAR.
                   </p>
                 </div>
               )}
