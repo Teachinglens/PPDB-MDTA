@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'user')
+    //
+    // Collection: students
+    // Document ID: auto-generated or registration number
+    // Fields:
+    //   - fullName: string (required)
+    //   - birthPlace: string
+    //   - birthDate: string (required)
+    //   - gender: string (required)
+    //   - parentName: string (required)
+    //   - phoneNumber: string (required)
+    //   - address: string
+    //   - status: string (required, 'pending', 'accepted', 'rejected')
+    //   - registrationNumber: string
+    //   - createdAt: timestamp
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "mahardikasandy1992@gmail.com");
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Rules for users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAdmin();
+    }
+
+    // Rules for students collection
+    match /students/{studentId} {
+      // Public can create applications (pendaftaran)
+      allow create: if true; 
+      
+      // Public can read their own status if they have the registration number (simplified for demo)
+      // In a real app, we might use auth or a specific token
+      allow read: if true; 
+      
+      // Only admin can update status or delete
+      allow update, delete: if isAdmin();
+    }
+  }
+}
