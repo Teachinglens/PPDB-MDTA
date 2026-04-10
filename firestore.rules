@@ -36,16 +36,26 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         request.auth.token.email == "mahardikasandy1992@gmail.com");
+         request.auth.token.email == "mahardikasandy1992@gmail.com" ||
+         request.auth.token.email == "barlimahardikasandy@gmail.com");
     }
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isValidStudent(data) {
+      return data.fullName is string && data.fullName.size() > 0 && data.fullName.size() < 100 &&
+             data.birthDate is string &&
+             data.gender in ['Laki-laki', 'Perempuan'] &&
+             data.parentName is string && data.parentName.size() > 0 &&
+             data.phoneNumber is string && data.phoneNumber.size() > 0 &&
+             data.status in ['pending', 'accepted', 'rejected'];
+    }
+
     // Rules for users collection
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
       allow create: if isAuthenticated() && isOwner(userId);
       allow update: if isAdmin();
     }
@@ -53,14 +63,15 @@ service cloud.firestore {
     // Rules for students collection
     match /students/{studentId} {
       // Public can create applications (pendaftaran)
-      allow create: if true; 
+      allow create: if isValidStudent(request.resource.data); 
       
-      // Public can read their own status if they have the registration number (simplified for demo)
-      // In a real app, we might use auth or a specific token
+      // Allow reading by registration number (for progress check)
+      // This is still relatively open but validated by the app logic
       allow read: if true; 
       
       // Only admin can update status or delete
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() && isValidStudent(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }

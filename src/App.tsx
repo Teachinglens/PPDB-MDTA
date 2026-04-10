@@ -1,7 +1,8 @@
 import { jsPDF } from 'jspdf';
+import { LOGO_BASE64 } from './constants/logo';
 import { differenceInYears, parseISO } from 'date-fns';
 import { useParams } from 'react-router-dom';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { Component, createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, auth, db, doc, getDoc, setDoc, signOut, signInWithPopup, googleProvider, serverTimestamp, query, collection, onSnapshot, updateDoc, getDocs, deleteDoc } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,6 +28,120 @@ import {
   Trash2
 } from 'lucide-react';
 
+// --- Error Handling ---
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+};
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends (Component as any) {
+  constructor(props: any) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    const { hasError, error } = (this as any).state;
+    if (hasError) {
+      let message = "Terjadi kesalahan pada aplikasi.";
+      try {
+        const parsed = JSON.parse(error?.message || "{}");
+        if (parsed.error && parsed.error.includes("permissions")) {
+          message = "Akses ditolak. Anda tidak memiliki izin untuk melakukan operasi ini.";
+        }
+      } catch (e) {
+        // Not a JSON error
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+          <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-gray-100 text-center">
+            <div className="bg-red-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Ups! Terjadi Kesalahan</h2>
+            <p className="text-gray-600 mb-8">{message}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+            >
+              Muat Ulang Halaman
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (this as any).props.children;
+  }
+}
+
 // --- Types ---
 interface UserProfile {
   uid: string;
@@ -41,6 +156,7 @@ interface AuthContextType {
   isAdmin: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  loginError: string | null;
 }
 
 // --- Context ---
@@ -62,22 +178,40 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        const docRef = doc(db, 'users', currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
-        } else {
-          // Default role for new users (except the bootstrapped admin)
-          const adminEmails = ["mahardikasandy1992@gmail.com", "barlimahardikasandy@gmail.com"];
-          const isAdminEmail = adminEmails.includes(currentUser.email || '');
-          const newProfile: UserProfile = {
-            uid: currentUser.uid,
-            email: currentUser.email || '',
-            role: isAdminEmail ? 'admin' : 'user'
-          };
-          await setDoc(docRef, newProfile);
-          setProfile(newProfile);
+        const path = `users/${currentUser.uid}`;
+        try {
+          const docRef = doc(db, 'users', currentUser.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const existingProfile = docSnap.data() as UserProfile;
+            const adminEmails = ["mahardikasandy1992@gmail.com", "barlimahardikasandy@gmail.com"];
+            const userEmail = currentUser.email?.toLowerCase();
+            const isAdminEmail = userEmail && adminEmails.includes(userEmail);
+            
+            if (isAdminEmail && existingProfile.role !== 'admin') {
+              // Force update to admin if they are in the list but database says otherwise
+              const updatedProfile = { ...existingProfile, role: 'admin' as const };
+              await updateDoc(docRef, { role: 'admin' });
+              setProfile(updatedProfile);
+            } else {
+              setProfile(existingProfile);
+            }
+          } else {
+            // Default role for new users (except the bootstrapped admin)
+            const adminEmails = ["mahardikasandy1992@gmail.com", "barlimahardikasandy@gmail.com"];
+            const userEmail = currentUser.email?.toLowerCase();
+            const isAdminEmail = userEmail && adminEmails.includes(userEmail);
+            const newProfile: UserProfile = {
+              uid: currentUser.uid,
+              email: currentUser.email || '',
+              role: isAdminEmail ? 'admin' : 'user'
+            };
+            await setDoc(docRef, newProfile);
+            setProfile(newProfile);
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, path);
         }
       } else {
         setProfile(null);
@@ -87,11 +221,19 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     return unsubscribe;
   }, []);
 
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   const login = async () => {
+    setLoginError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login Error:", error);
+      if (error.code === 'auth/unauthorized-domain') {
+        setLoginError("Domain ini belum terdaftar di Firebase Console. Silakan tambahkan domain ini ke 'Authorized Domains' di Firebase.");
+      } else {
+        setLoginError(error.message || "Gagal login. Silakan coba lagi.");
+      }
     }
   };
 
@@ -103,17 +245,33 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
   };
 
-  const isAdmin = profile?.role === 'admin' && (
-    window.location.hostname === 'localhost' || 
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname.includes('asia-southeast1.run.app') ||
-    profile.email === 'barlimahardikasandy@gmail.com'
-  );
+  const isAdmin = useMemo(() => {
+    if (!user) return false;
+    
+    const adminEmails = ["mahardikasandy1992@gmail.com", "barlimahardikasandy@gmail.com"];
+    const userEmail = user.email?.toLowerCase();
+    const isExplicitAdmin = !!(userEmail && adminEmails.includes(userEmail));
+
+    // Admin if they have the role OR if their email is in the hardcoded list
+    const hasAdminPrivilege = profile?.role === 'admin' || isExplicitAdmin;
+
+    // Hostname check (only for non-explicit admins)
+    const isAllowedHost = 
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.includes('asia-southeast1.run.app') ||
+      window.location.hostname.includes('vercel.app') ||
+      isExplicitAdmin; // Explicit admins are allowed from any host
+
+    return hasAdminPrivilege && isAllowedHost;
+  }, [user, profile]);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+    <ErrorBoundary>
+      <AuthContext.Provider value={{ user, profile, loading, isAdmin, login, logout, loginError }}>
+        {children}
+      </AuthContext.Provider>
+    </ErrorBoundary>
   );
 };
 
@@ -124,15 +282,18 @@ const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
 
-  const navItems = [
-    { name: 'Beranda', path: '/', icon: HomeIcon },
-    { name: 'Pendaftaran', path: '/register', icon: UserPlus },
-    { name: 'Cek Progres', path: '/progress', icon: Search },
-  ];
+  const navItems = useMemo(() => {
+    const items = [
+      { name: 'Beranda', path: '/', icon: HomeIcon },
+      { name: 'Pendaftaran', path: '/register', icon: UserPlus },
+      { name: 'Cek Progres', path: '/progress', icon: Search },
+    ];
 
-  if (isAdmin) {
-    navItems.push({ name: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard });
-  }
+    if (isAdmin) {
+      items.push({ name: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard });
+    }
+    return items;
+  }, [isAdmin]);
 
   return (
     <nav className="bg-white border-b border-gray-100 sticky top-0 z-50">
@@ -428,7 +589,7 @@ export default function App() {
 // --- Helper Components & Pages ---
 
 const LoginPage = () => {
-  const { user, isAdmin, login, loading } = useAuth();
+  const { user, isAdmin, login, loading, loginError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -451,6 +612,13 @@ const LoginPage = () => {
         </div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Login Panitia</h2>
         <p className="text-gray-600 mb-8">Silakan masuk menggunakan akun Google yang terdaftar sebagai panitia.</p>
+        
+        {loginError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600 flex items-start gap-3 text-left">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <p>{loginError}</p>
+          </div>
+        )}
         
         {user ? (
           <div className="space-y-4">
@@ -561,8 +729,9 @@ const RegisterPage = () => {
 
   const onSubmit = async (data: StudentFormValues) => {
     setIsSubmitting(true);
+    const regId = `REG-${Math.floor(100000 + Math.random() * 900000)}`;
+    const path = `students/${regId}`;
     try {
-      const regId = `REG-${Math.floor(100000 + Math.random() * 900000)}`;
       const studentData = {
         ...data,
         registrationNumber: regId,
@@ -573,8 +742,7 @@ const RegisterPage = () => {
       await setDoc(doc(db, 'students', regId), studentData);
       navigate(`/success/${regId}`);
     } catch (error) {
-      console.error("Registration Error:", error);
-      alert("Terjadi kesalahan saat pendaftaran. Silakan coba lagi.");
+      handleFirestoreError(error, OperationType.WRITE, path);
     } finally {
       setIsSubmitting(false);
     }
@@ -806,6 +974,7 @@ const ProgressPage = () => {
     setError('');
     setStudent(null);
     
+    const path = `students/${regId.toUpperCase()}`;
     try {
       const docRef = doc(db, 'students', regId.toUpperCase());
       const docSnap = await getDoc(docRef);
@@ -816,8 +985,7 @@ const ProgressPage = () => {
         setError('Nomor registrasi tidak ditemukan. Silakan cek kembali.');
       }
     } catch (err) {
-      console.error(err);
-      setError('Terjadi kesalahan saat mencari data.');
+      handleFirestoreError(err, OperationType.GET, path);
     } finally {
       setIsSearching(false);
     }
@@ -919,21 +1087,28 @@ const ProgressPage = () => {
                         onClick={() => {
                           const doc = new jsPDF();
                           
+                          // Logo
+                          try {
+                            doc.addImage(LOGO_BASE64, 'PNG', 20, 15, 30, 30);
+                          } catch (e) {
+                            console.error('Error adding logo to PDF:', e);
+                          }
+                          
                           // Header (Matching the provided image)
                           doc.setFont('helvetica', 'bold');
                           doc.setFontSize(14);
-                          doc.text('YAYASAN ABU DZAR AL-GHIFFARY', 115, 20, { align: 'center' });
+                          doc.text('YAYASAN ABU DZAR AL-GHIFFARY', 110, 20, { align: 'center' });
                           
                           doc.setFontSize(12);
-                          doc.text('MADRASAH DINIYAH TAKMILIYAH AWALIYAH', 115, 27, { align: 'center' });
+                          doc.text('MADRASAH DINIYAH TAKMILIYAH AWALIYAH', 110, 27, { align: 'center' });
                           
                           doc.setFontSize(22);
-                          doc.text('ABU DZAR', 115, 38, { align: 'center' });
+                          doc.text('ABU DZAR', 110, 38, { align: 'center' });
                           
                           doc.setFont('helvetica', 'normal');
                           doc.setFontSize(10);
-                          doc.text('Alamat: Jl. Raya Serang Km. 3 Komp. Cigadung Mandiri RT 01/10.', 115, 45, { align: 'center' });
-                          doc.text('Email: mdta.abudzar@gmail.com', 115, 50, { align: 'center' });
+                          doc.text('Alamat: Jl. Raya Serang Km. 3 Komp. Cigadung Mandiri RT 01/10.', 110, 45, { align: 'center' });
+                          doc.text('Email: mdta.abudzar@gmail.com', 110, 50, { align: 'center' });
                           
                           // Double Line Separator
                           doc.setLineWidth(0.8);
@@ -1053,31 +1228,34 @@ const AdminDashboard = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'students'));
+    const path = 'students';
+    const q = query(collection(db, path));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setStudents(data);
       setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
     });
     return unsubscribe;
   }, []);
 
   const updateStatus = async (id: string, status: string) => {
+    const path = `students/${id}`;
     try {
       await updateDoc(doc(db, 'students', id), { status });
     } catch (err) {
-      console.error(err);
-      alert("Gagal memperbarui status.");
+      handleFirestoreError(err, OperationType.UPDATE, path);
     }
   };
 
   const deleteStudent = async (id: string) => {
+    const path = `students/${id}`;
     try {
       await deleteDoc(doc(db, 'students', id));
       setDeletingId(null);
     } catch (err) {
-      console.error(err);
-      alert("Gagal menghapus data.");
+      handleFirestoreError(err, OperationType.DELETE, path);
     }
   };
 
